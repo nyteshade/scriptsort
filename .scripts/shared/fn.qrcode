@@ -1,0 +1,10 @@
+#use qrencode to make qr codes
+#format is <issuer name> <account name> <secret code>
+function qrcode() {
+  if ! [[ "$(which qrencode)" = "" ]]; then
+    printf "You may need to acquire qrencode. It's missing\n"
+    return 1
+  fi
+
+  qrencode -o- -d 300 -s 10 "otpauth://totp/${2}?secret=${3}&issuer=${1}" > ${HOME}/Desktop/${1}.png
+}

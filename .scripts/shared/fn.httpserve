@@ -1,0 +1,8 @@
+# Uses a built-in of python 3 to serve the current directory as
+# an http web server. The first parameter is the default port, the
+# second is a particular ip address to bind to
+function httpserve() {
+  PORT="${1:-8000}"
+  IP="${2:-0.0.0.0}"
+  python3 -m http.server ${PORT} --bind ${IP}
+}

@@ -1,0 +1,3 @@
+function rmdotbars() {
+  find "${1:-.}" -name "._*" -exec rm -v {} \;
+}

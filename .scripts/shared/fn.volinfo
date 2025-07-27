@@ -1,0 +1,56 @@
+function volinfo() {
+  # Flags for verbose output
+  local verbose=false
+
+  # Process optional parameters
+  while (( "$#" )); do
+    case "$1" in
+      --show-name | --verbose | -v | -s)
+        verbose=true
+        shift
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  # Store the disks to process
+  local disks=("$@")
+
+  # Initialize the output variable
+  local output=""
+
+  # Process each disk
+  for disk in "${disks[@]}"; do
+    # Capture the output of diskutil
+    local disk_info
+    disk_info=$(diskutil info "$disk")
+
+    # Extract the Volume Name
+    local volume_name
+    volume_name=$(echo "$disk_info" | grep "Volume Name:" | awk -F: '{print $2}' | xargs)
+
+    # Extract the Volume UUID
+    local volume_uuid
+    volume_uuid=$(echo "$disk_info" | grep "Volume UUID:" | awk -F: '{print $2}' | xargs)
+
+    # Append to output
+    if $verbose; then
+      output+="${volume_uuid}: ${volume_name}\n"
+    else
+      output+="${volume_uuid} "
+    fi
+
+    unset disk_info
+    unset volume_uuid
+    unset volume_name
+  done
+
+  # Print the output
+  if $verbose; then
+    printf "%b" "$output"
+  else
+    printf "%s" "${output% }" # Remove trailing space
+  fi
+}

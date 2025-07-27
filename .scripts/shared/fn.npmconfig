@@ -1,0 +1,3 @@
+function npmconfig() {
+  swapconfig "${1}" "$HOME/.npmrc.work" "$HOME/.npmrc.home" "$HOME/.npmrc"
+}

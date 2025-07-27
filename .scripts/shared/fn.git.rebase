@@ -1,0 +1,5 @@
+function rebase() {
+  ORIGIN="${1:-upstream}"
+  BRANCH="${2:-develop}"
+  git pull --rebase ${ORIGIN} ${BRANCH}
+}

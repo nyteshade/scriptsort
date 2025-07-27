@@ -1,0 +1,208 @@
+xcp() {
+  # Clones directories like AmigaDOS 'Copy CLONE'
+  # Usage: xcp [-q|--quiet] [-d|--delete] source/ destination/
+  
+  local quiet=false
+  local delete=""
+  local args=()
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet)
+        quiet=true
+        shift
+        ;;
+      
+      -d|--delete)
+        delete="--delete"
+        shift
+        ;;
+      
+      *)
+        # Use proper array append syntax for both bash and zsh
+        args[${#args[@]}]="$1"
+        shift
+        ;;
+    esac
+  done
+  
+  if [ ${#args[@]} -lt 2 ]; then
+    echo "Usage: xcp [-q|--quiet] [-d|--delete] source/ destination/"
+    echo "Options:"
+    echo "  -q, --quiet   Suppress progress output"
+    echo "  -d, --delete  Delete files in destination not present in source"
+    return 1
+  fi
+  
+  local source="${args[0]}"
+  local dest="${args[1]}"
+  
+  # Validate source exists
+  if [ ! -e "$source" ]; then
+    echo "Error: Source '$source' does not exist"
+    return 1
+  fi
+  
+  # Function to check rsync version
+  check_rsync_version() {
+    local rsync_cmd="$1"
+    if command -v "$rsync_cmd" &> /dev/null; then
+      local version=$("$rsync_cmd" --version 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+      local major_version=$(echo "$version" | cut -d. -f1)
+      if [ -n "$major_version" ] && [ "$major_version" -ge 3 ]; then
+        return 0
+      fi
+    fi
+    return 1
+  }
+  
+  # Function to find rsync 3+
+  find_rsync3() {
+    # Check brew-installed rsync first (if brew exists)
+    if command -v brew &> /dev/null; then
+      local brew_prefix=$(brew --prefix 2>/dev/null)
+      if [ -n "$brew_prefix" ]; then
+        local brew_rsync="$brew_prefix/bin/rsync"
+        if check_rsync_version "$brew_rsync"; then
+          echo "$brew_rsync"
+          return 0
+        fi
+      fi
+    fi
+    
+    # Check common locations
+    for cmd in rsync /usr/local/bin/rsync /opt/homebrew/bin/rsync; do
+      if check_rsync_version "$cmd"; then
+        echo "$cmd"
+        return 0
+      fi
+    done
+    
+    # Don't echo anything if not found
+    return 1
+  }
+  
+  # Function to setup Homebrew environment
+  setup_brew_env() {
+    local brew_path=""
+    if [ -x "/opt/homebrew/bin/brew" ]; then
+      brew_path="/opt/homebrew/bin/brew"  # Apple Silicon
+    elif [ -x "/usr/local/bin/brew" ]; then
+      brew_path="/usr/local/bin/brew"      # Intel
+    else
+      return 1
+    fi
+    
+    echo ""
+    echo "Homebrew installed, but it needs to be added to your PATH."
+    echo ""
+    echo "To continue, you can either:"
+    echo "1) Run these commands in your current shell:"
+    echo ""
+    echo "   eval \"\$(${brew_path} shellenv)\""
+    echo ""
+    echo "2) Restart your shell/terminal"
+    echo ""
+    echo "Which would you like to do? [1/2]"
+    read -r choice
+    
+    if [[ "$choice" == "1" ]]; then
+      echo "Setting up Homebrew environment..."
+      eval "$($brew_path shellenv)"
+      
+      if command -v brew &> /dev/null; then
+        echo "✓ Homebrew environment loaded"
+        return 0
+      else
+        echo "Error: Failed to load Homebrew environment"
+        return 1
+      fi
+    else
+      echo "Please restart your shell and run 'xcp' again."
+      return 2  # Special return code for restart needed
+    fi
+  }
+  
+  # Function to ensure brew and rsync are installed
+  ensure_dependencies() {
+    local rsync_cmd=$(find_rsync3)
+    
+    if [ -n "$rsync_cmd" ]; then
+      echo "$rsync_cmd"
+      return 0
+    fi
+    
+    echo "⚠️  rsync 3.0+ not found. This is required for full ACL preservation on macOS." >&2
+    echo "   The default macOS rsync (2.6.9) cannot preserve all file attributes." >&2
+    echo "" >&2
+    
+    # Check if Homebrew needs to be installed
+    if ! command -v brew &> /dev/null; then
+      echo "Homebrew is required to install rsync 3+." >&2
+      echo "Would you like to install Homebrew? [y/N]" >&2
+      read -r response
+      
+      if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        echo "Cannot proceed without rsync 3+. To install it:" >&2
+        echo "1. Install Homebrew: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"" >&2
+        echo "2. Install rsync: brew install rsync" >&2
+        return 1
+      fi
+      
+      echo "Installing Homebrew..." >&2
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      
+      setup_brew_env
+      local brew_setup_result=$?
+      if [ $brew_setup_result -eq 2 ]; then
+        return 1  # User chose to restart shell
+      elif [ $brew_setup_result -ne 0 ]; then
+        echo "Error: Failed to setup Homebrew" >&2
+        return 1
+      fi
+    fi
+    
+    # Now install rsync
+    echo "" >&2
+    echo "Would you like to install rsync 3+ via Homebrew? [y/N]" >&2
+    read -r response
+    
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+      echo "Cannot proceed without rsync 3+. Please install it manually:" >&2
+      echo "  brew install rsync" >&2
+      return 1
+    fi
+    
+    echo "Installing rsync..." >&2
+    if ! brew install rsync; then
+      echo "Error: Failed to install rsync" >&2
+      return 1
+    fi
+    
+    # Find the newly installed rsync
+    rsync_cmd=$(find_rsync3)
+    if [ -n "$rsync_cmd" ]; then
+      echo "✓ rsync 3+ successfully installed at: $rsync_cmd" >&2
+      echo "$rsync_cmd"
+      return 0
+    else
+      echo "Error: rsync installation succeeded but cannot find rsync 3+" >&2
+      return 1
+    fi
+  }
+  
+  # Get rsync command, installing if necessary
+  local rsync_cmd=$(ensure_dependencies)
+  if [ -z "$rsync_cmd" ]; then
+    return 1
+  fi
+  
+  # Build rsync options
+  local progress="--progress"
+  if $quiet; then
+    progress=""
+  fi
+  
+  # Execute the copy
+  sudo "$rsync_cmd" -avHAXNS --fileflags --force-change $progress $delete "$source" "$dest"
+}

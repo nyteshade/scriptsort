@@ -1,0 +1,5 @@
+#!/usr/bin/env zsh
+
+printf >>${HOME}/.zshrc "source <(scriptsort $HOME/.scripts/shared --bundle)\n"
+printf >>${HOME}/.zshrc "source <(scriptsort $HOME/.scripts/zsh --bundle)\n\n"
+printf >>${HOME}/.zshrc "####### - Anything beyond this point is as of yet unmanaged - ########\n"

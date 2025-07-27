@@ -1,0 +1,36 @@
+# macos and gui app related
+alias jailbreak='xattr -r -d com.apple.quarantine '
+
+# terminal related
+which >/dev/null micro && alias m="micro"
+
+# terminal replacements
+which >/dev/null bpytop && alias top="$(which bpytop)"
+which >/dev/null bat && alias cat='bat'
+which >/dev/null bat && alias less='bat'
+which >/dev/null rg && alias grep='rg'
+which >/dev/null duf && alias df='duf'
+which >/dev/null dust && alias du='dust'
+which >/dev/null procs && alias ps='procs'
+which >/dev/null lsd && alias ls='lsd -AhF --git --icon never --group-directories-first'
+alias 'terminal.replacements'='brew install bpytop bat rg duf dust procs lsd'
+
+# developer related
+which >/dev/null delta && alias diff='delta '
+which >/dev/null hub && alias git='hub '
+which >/dev/null pnpm && alias pn='pnpm '
+
+# go.<place> aliases
+alias 'go.js'='cd /Volumes/Code/JavaScript'
+alias 'go.macos'='cd /Volumes/Code/macOS'
+alias 'go.ios'='cd /Volumes/Code/iOS'
+alias 'go.swift'='cd /Volumes/Code/Swift'
+alias 'go.java'='cd /Volumes/Code/Java'
+alias 'go.kotlin'='cd /Volumes/Code/Kotlin'
+alias 'go.c'='cd /Volumes/Code/C'
+alias 'go.desktop'='cd /Users/$USER/Desktop'
+alias 'go.ai'='cd /Volumes/Code/Ai'
+alias 'go.amiga'='cd /Volumes/Code/Amiga'
+alias 'go.rust'='cd /Volumes/Code/Rust'
+alias 'go.beos'='cd /Volumes/Code/BeOS'
+alias go.icloud='cd $HOME/Library/Mobile Documents/com~apple~CloudDocs"'

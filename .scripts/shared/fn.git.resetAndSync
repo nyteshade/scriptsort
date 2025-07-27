@@ -1,0 +1,12 @@
+function resetAndSync() {
+  ORIGIN="${1:-upstream}"
+  BRANCH="${2:-develop}"
+  CUR="`echo $(command git symbolic-ref HEAD 2> /dev/null)  || ref=$(command git rev-parse --short HEAD 2> /dev/null)  || 0`"
+  CUR="${ref#refs/heads/}"
+
+  git checkout ${BRANCH}
+  git fetch ${ORIGIN}
+  git reset --hard ${ORIGIN}/${BRANCH}
+  git clean -f -d
+  git checkout ${CUR}
+}

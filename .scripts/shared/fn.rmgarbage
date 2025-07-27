@@ -1,0 +1,5 @@
+function rmgarbage() {
+  rmdss;
+  rmorigs;
+  rmdotbars
+}

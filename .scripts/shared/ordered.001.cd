@@ -1,0 +1,112 @@
+# Save the current directory
+OLDPWD="$PWD"
+
+# by default, echoes 0 if the last command succeeded; or 1 otherwise
+ifthen() { [[ $? -eq 0 ]] && echo "${1:-0}" || echo "${2:-1}" }
+
+export IS_ZSH=$($([ -v ZSH_VERSION ]); ifthen)
+export IS_BASH=$($([ -v BASH_VERSION ]); ifthen)
+
+# Declare a global associative array
+if [[ ${IS_ZSH} -eq 0 ]]; then
+  typeset -gA CD_FILES
+else
+  declare -gA CD_FILES
+fi
+
+function cdactionPython() {
+  local action="${1:-arriving}"
+
+  if [[ ${action} = "arriving" ]]; then
+    if grep -q "\[tool.poetry" pyproject.toml; then
+      printf "Poetry configuration detected, activating...\n"
+      poetry env activate
+    elif grep -q "\[tool.flit" pyproject.toml; then
+      printf "Flit configuration detected, activating...\n"
+      # do something with flit
+    elif grep -q "\[tool.pipenv" pyproject.toml; then
+      printf "Pipenv configuration detected, activating...\n"
+      # do something with pipenv
+    fi
+  fi
+}
+
+function cdactionNodeJS() {
+  local action="${1:-arriving}"
+
+  if [[ "${action}" = "arriving" ]]; then
+    if [[ -f "./.nvmrc" ]] && which >/dev/null nvm; then
+      printf "\x1b[36m.nvmrc\x1b[39m detected, attempting activation..."
+      nvm use --silent $(cat ./.nvmrc)
+      if [ $? -eq 0 ]; then
+        printf "\x1b[34msuccess\x1b[39m\n"
+      else
+        printf "\x1b[31mfailed!\x1b[39m\n"
+      fi
+    fi
+  else
+    if [[ -f "./.nvmrc" ]] && which >/dev/null nvm; then
+      printf "Leaving, switching back to nvm default..."
+      nvm use --silent default
+      if [ $? -eq 0 ]; then
+        printf "\x1b[34msuccess\x1b[39m\n"
+      else
+        printf "\x1b[31mfailed!\x1b[39m\n"
+      fi
+    fi
+  fi
+}
+
+# Define a function to override the 'cd' command
+function cd() {
+  local dir="$1"
+  local in=".cdin"
+  local out=".cdout"
+  local on=".oncd"
+
+  CD_FILES["exit"]=$($([ -f "${OLDPWD}/${out}" ]); ifthen)
+  CD_FILES["enter"]=$($([ -f "${dir}/${in}" ]); ifthen)
+  CD_FILES["entered"]=$($([ -f "${dir}/${on}" ]); ifthen)
+
+  CD_FILES["pyproject.toml.old"]=$($([ -f "${OLDPWD}/pyproject.toml" ]); ifthen)
+  CD_FILES["package.json.old"]=$($([ -f "${OLDPWD}/package.json" ]); ifthen)
+  CD_FILES["pyproject.toml"]=$($([ -f "${dir}/pyproject.toml" ]); ifthen)
+  CD_FILES["package.json"]=$($([ -f "${dir}/package.json" ]); ifthen)
+  CD_FILES[".nvmrc"]=$($([ -f "${dir}/.nvmrc" ]); ifthen)
+
+  # Default to the home directory if no argument is passed
+  if [[ -z "$dir" ]]; then
+    dir="$HOME"
+  fi
+
+  # Execute the .oncdo script if it exists in the old directory
+  if [[ ${CD_FILES["exit"]} -eq 0 ]]; then
+    source "$OLDPWD/${out}"
+  fi
+
+  # Execute known out scripts
+  [[ ${CD_FILES["pyproject.toml.old"]} -eq 0 ]] && cdactionPython leaving
+  [[ ${CD_FILES["package.json.old"]} -eq 0 ]] && cdactionNodeJS leaving
+
+  # Use the builtin 'cd' to change directory
+  builtin cd 2>/dev/null "$dir" && {
+    # Execute the .oncdi script if it exists in the new directory
+    if [[ ${CD_FILES["enter"]} -eq 0 ]]; then
+      source "$PWD/${in}"
+    fi
+
+    # Execute the .oncd file if it exists in the new directory
+    if [[ ${CD_FILES["entered"]} -eq 0 ]]; then
+      source "$PWD/${on}"
+    fi
+
+    # Check for some knowns
+    [[ ${CD_FILES["pyproject.toml"]} -eq 0 ]] && cdactionPython arriving
+    [[ ${CD_FILES["package.json"]} -eq 0 ]] && cdactionNodeJS arriving
+
+    # Update OLDPWD to the new directory after all scripts have run
+    OLDPWD="$PWD"
+  } || {
+    printf "Unable to find directory '\x1b[35m%s\x1b[39m'\n" "${dir}"
+  }
+}

@@ -1,0 +1,75 @@
+convertFonts() {
+  if [[ ${#} -lt 1 ]]; then
+    echo "Usage: convertFonts <startDir> <outDir> [rename]"
+    echo "where"
+    echo "  outDir     - if missing, this is the same as startDir"
+    echo "\n\x1b[3mIf rename is \x1b[1mtrue\x1b[22m, old file name is mv'ed to the new name"
+    echo "otherwise a copy is made and the original is untouched.\x1b[23m"
+  else
+    startDir="${1:-.}"
+    outDir="${startDir}"
+
+    # Initialize rename to a default value (false or true, depending on your needs)
+    rename=false
+
+    if [[ $# -gt 2 ]]; then
+      # More than two arguments, check the last argument for 'true'
+      if [[ ${@: -1} = true ]]; then
+        rename=true
+      fi
+      # Assign the second to last argument to outDir
+      outDir="${@: -2:1}"
+    elif [[ $# -eq 2 ]]; then
+      # Exactly two arguments
+      if [[ ${@: -1} = true ]] || [[ ${@: -1} = false ]]; then
+        # If the last argument is explicitly true or false, assign it to rename
+        rename=${@: -1}
+      else
+        # Otherwise, assume it's the output directory
+        outDir="${@: -1}"
+      fi
+    fi
+
+    echo "First, true type fonts..."
+    for f in ${startDir}/**/*.ttf; do
+      mkdir -p "${outDir}/$(dirname ${f})"
+      out="${outDir}/$(dirname ${f})/$(mdls-json ${f} com_apple_ats_name_postscript reduce json)"
+      out="${out//\"/}.ttf"
+      rmMsg=" \x1b[1m[\x1b[22;33mcopied\x1b[39;1m]\x1b[22m"
+
+      if [[ -e "${out}" ]]; then
+        rmMsg=" \x1b[1m[\x1b[22;34mskipped - already exists\x1b[39;1m]\x1b[22m"
+      else
+        if [[ ${2:-false} = true ]]; then
+          mv "${f}" "${out}"
+          rmMsg=" \x1b[1m[\x1b[22;32mrenamed\x1b[39;1m]\x1b[22m"
+        else
+          cp -fp "${f}" "${out}"
+        fi
+      fi
+
+      echo "  ${f} -> ${out//\"/}${rmMsg}"
+    done
+
+    echo "\nNext, open type fonts..."
+    for f in ${1:-.}/**/*.otf; do
+      mkdir -p "${outDir}/$(dirname ${f})"
+      out="${outDir}/$(dirname ${f})/$(mdls-json ${f} com_apple_ats_name_postscript reduce json)"
+      out="${out//\"/}.otf"
+      rmMsg=" \x1b[1m[\x1b[22;33mcopied\x1b[39;1m]\x1b[22m"
+
+      if [[ -e "${out}" ]]; then
+        rmMsg=" \x1b[1m[\x1b[22;34mskipped - already exists\x1b[39;1m]\x1b[22m"
+      else
+        if [[ ${2:-false} = true ]]; then
+          mv "${f}" "${out}"
+          rmMsg=" \x1b[1m[\x1b[22;32mrenamed\x1b[39;1m]\x1b[22m"
+        else
+          cp -fp "${f}" "${out}"
+        fi
+      fi
+
+      echo "  ${f} -> ${out//\"/}${rmMsg}"
+    done
+  fi
+}

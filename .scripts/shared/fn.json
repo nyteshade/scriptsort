@@ -1,0 +1,33 @@
+json () {
+	usage () {
+		echo "Usage: json [property] [file]"
+		echo "   property: (optional) The property of the JSON object to retrieve."
+		echo "   file: (optional) The file containing the JSON object. Defaults to 'package.json'."
+		echo ""
+		echo "Special values for property:"
+		echo "   *: Retrieve the whole object."
+		echo "   --help or -h: Display this help message."
+	}
+	if ! command -v node &> /dev/null
+	then
+		echo "Node.js is not installed. Please install NVM and then a version of Node.js."
+		echo "To install NVM, run: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash"
+		echo "After installing NVM, you can install Node.js by running: nvm install node"
+		return 1
+	fi
+	case "$1" in
+		("") local propertySuffix=".scripts"  ;;
+		("*") local propertySuffix=""  ;;
+		("--help" | "-h") usage
+			return 0 ;;
+		(*) local propertySuffix=".$1"  ;;
+	esac
+	local file=${2:-package.json}
+	if [ ! -f $file ]
+	then
+		echo -e "\x1b[1mError: File '${file}' does not exist. If you intend to use 'package.json', ensure it's present in the current directory, or specify a different file.\x1b[0m"
+		usage
+		return 1
+	fi
+	node -e "console.log(JSON.parse(require('fs').readFileSync('${file}'))${propertySuffix})"
+}

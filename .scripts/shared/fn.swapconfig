@@ -1,0 +1,25 @@
+function swapconfig() {
+  corporateConfig="${2}"
+  personalConfig="${3}"
+  targetConfig="${4}"
+
+  private='(work|private|paypal)'
+  public='(home|personal|public)'
+
+  case "${1}" in
+    $~private)
+      cp "${corporateConfig}" "${targetConfig}"
+      printf "${targetConfig} swapped  \x1b[1m[Corporate]\x1b[0m\n"
+      ;;
+
+    $~public)
+      cp "${personalConfig}" "${targetConfig}"
+      printf "${targetConfig} swapped  \x1b[1m[Personal ]\x1b[0m\n"
+      ;;
+
+    *)
+      printf "\nUnknown config use one of the following\n"
+      printf "  work, private, paypal   -> ${corporateConfig}\n"
+      printf "  home, personal, public  -> ${personalConfig}\n\n"
+  esac
+}

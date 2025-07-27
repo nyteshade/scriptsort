@@ -1,0 +1,191 @@
+# sgr: Apply Select Graphic Rendition (SGR) parameters to a message
+#
+# Usage: sgr "message" "mode1" "mode2" ...
+#
+# Parameters:
+#   message - The text message to style
+#   modes   - One or more styling modes (can be comma-separated)
+#
+# Colors:
+#   black, red, green, yellow, blue, magenta, cyan, white
+#
+# Color Specifiers:
+#   fg      - foreground (default)
+#   bg      - background
+#   bright  - bright colors
+#
+# Text Modes:
+#   blink, k    - blink text
+#   bold, b     - bold text
+#   conceal, c  - concealed text
+#   dim, d      - dim text
+#   italics, i  - italic text
+#   negative, n - negative colors
+#   strike, s   - strikethrough text
+#   underline, u - underlined text
+#
+# Examples:
+#   sgr "Hello" "red"
+#   sgr "World" "green,bold"
+#   sgr "Example" "bluebgbright"
+sgr() {
+  if [ $# -lt 2 ]; then
+    echo "Usage: sgr \"message\" \"mode1\" [\"mode2\" ...]" >&2
+    return 1
+  fi
+
+  message="$1"
+  shift
+
+  # Initialize codes
+  open_codes=""
+  close_codes=""
+  noline=0
+
+  # Process all arguments after the message
+  for arg in "$@"; do
+    # Handle each comma-separated part
+    old_IFS="$IFS"
+    IFS=","
+    for part in $arg; do
+      IFS="$old_IFS"
+
+      # Convert to lowercase
+      mode=$(echo "$part" | tr '[:upper:]' '[:lower:]')
+
+      # Check if its a request for noline
+      if [[ "${mode}" = "noline" ]]; then
+        noline=1
+        continue
+      fi
+
+      # Check if it's a color or a mode string
+      is_color=0
+      for color in black red green yellow blue magenta cyan white; do
+        if echo "$mode" | grep -q "$color"; then
+          is_color=1
+          break
+        fi
+      done
+
+      # Handle multi-character shorthand (only if not a color)
+      if [ $is_color -eq 0 ] && [ ${#mode} -gt 1 ]; then
+        # Check if it contains mode characters but not color specifiers
+        has_mode_chars=0
+        has_color_specs=0
+
+        if echo "$mode" | grep -q -e "b" -e "i" -e "u" -e "k" -e "s" -e "d" -e "c" -e "n"; then
+          has_mode_chars=1
+        fi
+
+        if echo "$mode" | grep -q -e "fg" -e "bg" -e "bright"; then
+          has_color_specs=1
+        fi
+
+        # If it has mode chars and no color specs, process each character
+        if [ $has_mode_chars -eq 1 ] && [ $has_color_specs -eq 0 ]; then
+          i=0
+          while [ $i -lt ${#mode} ]; do
+            char=$(echo "$mode" | cut -c$(($i+1)))
+            _process_mode "$char"
+            i=$(($i+1))
+          done
+          # Skip the normal processing
+          continue
+        fi
+      fi
+
+      # Process as a single mode
+      _process_mode "$mode"
+    done
+  done
+
+  # Output the styled text
+  printf "%b%s%b" "$open_codes" "$message" "$close_codes"
+
+  # If not noline...
+  if [[ ${noline} -eq 0 ]]; then
+    printf "\n"
+  fi
+}
+
+# Helper function to process a single mode
+_process_mode() {
+  mode="$1"
+  is_bg=0
+  is_bright=0
+
+  # Check if it's a background color
+  if echo "$mode" | grep -q "bg"; then
+    is_bg=1
+    mode=$(echo "$mode" | sed 's/bg//g')
+  fi
+
+  # Check if it's a bright color
+  if echo "$mode" | grep -q "bright"; then
+    is_bright=1
+    mode=$(echo "$mode" | sed 's/bright//g')
+  fi
+
+  # Process color
+  color_index=-1
+  if echo "$mode" | grep -q "black"; then
+    color_index=0
+  elif echo "$mode" | grep -q "red"; then
+    color_index=1
+  elif echo "$mode" | grep -q "green"; then
+    color_index=2
+  elif echo "$mode" | grep -q "yellow"; then
+    color_index=3
+  elif echo "$mode" | grep -q "blue"; then
+    color_index=4
+  elif echo "$mode" | grep -q "magenta"; then
+    color_index=5
+  elif echo "$mode" | grep -q "cyan"; then
+    color_index=6
+  elif echo "$mode" | grep -q "white"; then
+    color_index=7
+  fi
+
+  # Apply color codes if a color was found
+  if [ $color_index -ge 0 ]; then
+    if [ $is_bg -eq 1 ]; then
+      if [ $is_bright -eq 1 ]; then
+        open_codes="${open_codes}\033[10${color_index}m"
+      else
+        open_codes="${open_codes}\033[4${color_index}m"
+      fi
+      close_codes="\033[49m${close_codes}"
+    else
+      if [ $is_bright -eq 1 ]; then
+        open_codes="${open_codes}\033[9${color_index}m"
+      else
+        open_codes="${open_codes}\033[3${color_index}m"
+      fi
+      close_codes="\033[39m${close_codes}"
+    fi
+    return
+  fi
+
+  # Process text formatting modes
+  case "$mode" in
+    blink|k)     open_codes="${open_codes}\033[5m";  close_codes="\033[25m${close_codes}" ;;
+    bold|b)      open_codes="${open_codes}\033[1m";  close_codes="\033[22m${close_codes}" ;;
+    conceal|c)   open_codes="${open_codes}\033[8m";  close_codes="\033[28m${close_codes}" ;;
+    dim|d)       open_codes="${open_codes}\033[2m";  close_codes="\033[22m${close_codes}" ;;
+    italics|i)   open_codes="${open_codes}\033[3m";  close_codes="\033[23m${close_codes}" ;;
+    negative|n)  open_codes="${open_codes}\033[7m";  close_codes="\033[27m${close_codes}" ;;
+    strike|s)    open_codes="${open_codes}\033[9m";  close_codes="\033[29m${close_codes}" ;;
+    underline|u) open_codes="${open_codes}\033[4m";  close_codes="\033[24m${close_codes}" ;;
+  esac
+}
+
+# A tag-like wrapper for sgr
+# Usage: sgrtag "modes" "message"
+sgrtag() {
+  if [ $# -ne 2 ]; then
+    echo "Usage: sgrtag \"modes\" \"message\"" >&2
+    return 1
+  fi
+  sgr "$2" "$1"
+}
