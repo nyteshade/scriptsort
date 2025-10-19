@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-printf >>${HOME}/.bashrc "source <(scriptsort $HOME/.scripts/shared --bundle)\n"
-printf >>${HOME}/.bashrc "source <(scriptsort $HOME/.scripts/bash --bundle)\n\n"
+printf >>${HOME}/.bashrc "source <(scriptsort $HOME/.local/scripts/shared --bundle)\n"
+printf >>${HOME}/.bashrc "source <(scriptsort $HOME/.local/scripts/bash --bundle)\n\n"
 printf >>${HOME}/.bashrc "####### - Anything beyond this point is as of yet unmanaged - ########\n"
