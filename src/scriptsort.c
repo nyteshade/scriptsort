@@ -22,10 +22,30 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define MAX_FILES 1000
 #define MAX_FILENAME 256
 #define INITIAL_BUFFER_SIZE 4096
+
+/* SGR Color Constants */
+#define SGR_BOLD  "\033[1m"
+#define SGR_RED   "\033[31m"
+#define SGR_GREEN "\033[32m"
+#define SGR_CYAN  "\033[36m"
+#define SGR_RESET "\033[22;39m"
+
+/* Program Constants */
+#define SUB_SHARED "shared"
+#define SUB_BASH   "bash"
+#define SUB_ZSH    "zsh"
+
+/* Edit commands */
+typedef enum { CMD_NONE, CMD_WRITE, CMD_APPEND, CMD_REMOVE } Command;
+typedef struct Flag {
+  char *short_name;
+  char *long_name;
+} Flag;
 
 typedef char *String;
 typedef unsigned char Boolean;
@@ -48,8 +68,32 @@ static int wal_stricmp(const char *a, const char *b);
 static char* read_file_contents(const char* directory, const char* filename, size_t* size);
 static char* ensure_buffer_capacity(char* buffer, size_t* current_capacity, size_t needed_size);
 
+/* Function Prototypes */
+void sse_print_usage(const char *progname);
+int file_exists(const char *path);
+char *build_path(const char *sub_dir, const char *filename);
+char *read_stdin_to_buffer(void);
+int scriptsort_main(int argc, char **argv);
+int is_valid_ss_args(int argc, char **argv);
+int FlagMatches(Flag flag, const char *argument);
+
 int main(int argc, char *argv[]) {
   unsigned int cutoff_count = 50;
+
+  if (argc == 2 && FlagMatches((Flag){ 0, "--edit" }, argv[1])) {
+    sse_print_usage(argv[0]);
+    return 1;
+  }
+
+  if (is_valid_ss_args(argc, argv)) {
+    int i = 0, result = 0;
+
+    for (i = 0; i < argc; i++) {
+      printf("ARG[%d]: %s\n", i, argv[i]);
+    }
+
+    return scriptsort_main(argc, argv);
+  }
 
   if (argc < 2) {
     print_usage(argv[0]);
@@ -358,7 +402,9 @@ static void print_usage(const char *program_name) {
     "  fn.b\n"
     "  ordered.52.last\n\n"
     "To make this simpler, simply add this to the bottom of your startup script\n"
-    "  source <(scriptsort /path/to/dir --init)\n\n",
+    "  source <(scriptsort /path/to/dir --init)\n\n"
+    "Basic editor capabilities exist, pass \x1b[1m--edit\x1b[22m as the first parameter\n"
+    "to learn more about what can be done.\n\n",
     basename
   );
 }
@@ -496,4 +542,295 @@ static char* ensure_buffer_capacity(char* buffer, size_t* current_capacity, size
     *current_capacity = new_capacity;
   }
   return buffer;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Below is the bolted-on scriptsort editor capabilities                    */
+/* ------------------------------------------------------------------------ */
+
+void sse_print_usage(const char *progname) {
+  // Find last occurrence of any path separator
+  const char *basename = progname;
+  const char *last_sep = find_last_path_separator(progname);
+  const char *base = getenv("SCRIPTSORT_DIR");
+  const char *use_base = base != NULL ? base : "${HOME}/.local/scripts";
+
+  // If separator found, move pointer after it
+  if (last_sep != NULL) {
+    basename = last_sep + 1;
+  }
+
+  fprintf(stderr,
+    SGR_BOLD "%s" SGR_RESET " provides a quick convenient way to "
+      SGR_CYAN "write" SGR_RESET ", "
+      SGR_CYAN "append" SGR_RESET ", and "
+      SGR_CYAN "remove" SGR_RESET "\n"
+    "scripts in the directory: %s.\n",
+    basename, use_base
+  );
+  fprintf(stderr, "\nDefine the " SGR_GREEN "SCRIPTSORT_DIR" SGR_RESET " environment variable to alter the directory.\n\n");
+  fprintf(stderr, SGR_BOLD "Usage:" SGR_RESET " %s --edit [options] <command> [args]\n\n", basename);
+  fprintf(stderr, SGR_BOLD "Options:\n" SGR_RESET);
+  fprintf(stderr, "  --shared     Operate in 'shared' directory (default)\n");
+  fprintf(stderr, "  --bash       Operate in 'bash' directory\n");
+  fprintf(stderr, "  --zsh      Operate in 'zsh' directory\n\n");
+  fprintf(stderr, SGR_BOLD "Commands:\n" SGR_RESET);
+  fprintf(stderr, "  " SGR_CYAN "write" SGR_RESET " [-f|--force] [-q|--quiet] <file> [text]\n");
+  fprintf(stderr, "  " SGR_CYAN "append" SGR_RESET " [-q|--quiet] <file> [text]\n");
+  fprintf(stderr, "  " SGR_CYAN "remove" SGR_RESET " <file>\n\n");
+  fprintf(stderr, SGR_BOLD "Note:" SGR_RESET " If [text] is omitted, program reads from STDIN (Heredocs).\n");
+}
+
+int file_exists(const char *path) {
+  struct stat st;
+
+  return (stat(path, &st) == 0);
+}
+
+char *read_stdin_to_buffer(void) {
+  size_t capacity = 1024;
+  size_t size = 0;
+  char *buffer = (char *)malloc(capacity);
+  int ch;
+
+  if (!buffer)
+    return NULL;
+
+  while ((ch = getchar()) != EOF) {
+    if (size + 1 >= capacity) {
+      capacity *= 2;
+      buffer = (char *)realloc(buffer, capacity);
+
+      if (!buffer)
+        return NULL;
+    }
+
+    buffer[size++] = (char)ch;
+  }
+
+  buffer[size] = '\0';
+  return buffer;
+}
+
+char *build_path(const char *sub_dir, const char *filename) {
+  const char *base = getenv("SCRIPTSORT_DIR");
+  char *home = getenv("HOME");
+  char *full_path;
+  size_t len;
+
+  if (!base) {
+    if (!home) {
+      fprintf(stderr, SGR_RED "Error:" SGR_RESET " SCRIPTSORT_DIR and HOME are unset.\n");
+      return NULL;
+    }
+
+    len = strlen(home) + strlen("/.local/scripts/") + strlen(sub_dir) + strlen("/") + strlen(filename) + 1;
+    full_path = (char *)calloc(len, sizeof(char));
+
+    if (full_path)
+      sprintf(full_path, "%s/.local/scripts/%s/%s", home, sub_dir, filename);
+  }
+  else {
+    len = strlen(base) + strlen("/") + strlen(sub_dir) + strlen("/") + strlen(filename) + 1;
+    full_path = (char *)calloc(len, sizeof(char));
+
+    if (full_path)
+      sprintf(full_path, "%s/%s/%s", base, sub_dir, filename);
+  }
+
+  return full_path;
+}
+
+int scriptsort_main(int argc, char **argv) {
+  const char *sub_dir = SUB_SHARED;
+  const char *filename = NULL;
+  char *input_content = NULL;
+  char *full_path = NULL;
+  Command cmd = CMD_NONE;
+  int force = 0, quiet = 0, i = 2, j = 2, alloc_content = 0;
+  FILE *fp;
+
+  Flag f_bash     = { 0, "--bash" };
+  Flag f_zsh      = { 0, "--zsh" };
+  Flag f_shared   = { 0, "--shared" };
+  Flag f_force    = { "-f", "--force" };
+  Flag f_quiet    = { "-q", "--quiet" };
+  Flag f_help     = { "-h", "--help" };
+
+  Flag cmd_write  = { 0, "write" };
+  Flag cmd_append = { 0, "append" };
+  Flag cmd_remove = { 0, "remove" };
+
+  if (argc < 3) {
+    sse_print_usage(argv[0]);
+
+    return 1;
+  }
+
+  /* 1. Global Flags */
+  for (; j < argc; j++) {
+    if      (FlagMatches(f_bash, argv[j])) { sub_dir = SUB_BASH; i++; }
+    else if (FlagMatches(f_zsh, argv[j])) { sub_dir = SUB_ZSH; i++; }
+    else if (FlagMatches(f_shared, argv[j])) { sub_dir = SUB_SHARED; i++; }
+    else if (FlagMatches(f_help, argv[j])) {
+      sse_print_usage(argv[0]);
+
+      return 1;
+    }
+    else break;
+  }
+
+  /* 2. Subcommand */
+  if (i >= argc) {
+    sse_print_usage(argv[0]);
+
+    return 1;
+  }
+
+  if      (FlagMatches(cmd_write, argv[i])) cmd = CMD_WRITE;
+  else if (FlagMatches(cmd_append, argv[i])) cmd = CMD_APPEND;
+  else if (FlagMatches(cmd_remove, argv[i])) cmd = CMD_REMOVE;
+  else {
+    fprintf(stderr, SGR_RED "Unknown command: %s\n" SGR_RESET, argv[i]);
+    return 1;
+  }
+
+  i++;
+
+  /* 3. Subcommand Flags & Args */
+  for (; i < argc; i++) {
+    if      (FlagMatches(f_force, argv[i])) force = 1;
+    else if (FlagMatches(f_quiet, argv[i])) quiet = 1;
+    else if (!filename) filename = argv[i];
+    else if (!input_content) input_content = argv[i];
+  }
+
+  if (!filename) {
+    fprintf(stderr, SGR_RED "Error:" SGR_RESET " Filename required.\n");
+
+    return 1;
+  }
+
+  full_path = build_path(sub_dir, filename);
+
+  if (!full_path)
+    return 1;
+
+  /* 4. Handle STDIN if content argument is missing */
+  if (cmd != CMD_REMOVE && !input_content) {
+    input_content = read_stdin_to_buffer();
+    alloc_content = 1;
+
+    if (!input_content) {
+      free(full_path);
+
+      return 1;
+    }
+  }
+
+  /* 5. Execution */
+  if (cmd == CMD_WRITE) {
+    if (file_exists(full_path) && !force) {
+      fprintf(stderr, SGR_RED "Error:" SGR_RESET " File exists. Use -f to overwrite.\n");
+
+      if (alloc_content)
+        free(input_content);
+
+      free(full_path);
+      return 1;
+    }
+
+    fp = fopen(full_path, "w");
+
+    if (!fp)
+      perror("fopen");
+    else {
+      fputs(input_content, fp);
+      fclose(fp);
+      if (!quiet) printf("%s\n", filename);
+    }
+  }
+  else if (cmd == CMD_APPEND) {
+    fp = fopen(full_path, "a");
+
+    if (!fp)
+      perror("fopen");
+    else {
+      fprintf(fp, "\n%s", input_content);
+      fclose(fp);
+
+      if (!quiet)
+        printf("%s\n", filename);
+    }
+  }
+  else if (cmd == CMD_REMOVE) {
+    if (unlink(full_path) != 0) {
+      free(full_path);
+
+      return 1;
+    }
+  }
+
+  if (alloc_content)
+    free(input_content);
+
+  free(full_path);
+  return 0;
+}
+
+/* Returns 1 if valid, 0 if invalid */
+int FlagMatches(Flag flag, const char *argument) {
+  return (
+    (flag.short_name != NULL && strcmp(flag.short_name, argument) == 0) ||
+    (flag.long_name != NULL && strcmp(flag.long_name, argument) == 0)
+  ) ? 1 : 0;
+}
+
+int is_valid_ss_args(int argc, char **argv) {
+  int i = 2;
+  int has_command = 0;
+  int has_filename = 0;
+
+  if (argc == 2 && FlagMatches((Flag) { NULL, "--edit" }, argv[1]))
+    return 0;
+
+  /* 1. Skip Global Options */
+  for (; i < argc; i++) {
+    if (
+      FlagMatches((Flag) { NULL, "--bash" }, argv[i]) ||
+      FlagMatches((Flag) { NULL, "--zsh" }, argv[i]) ||
+      FlagMatches((Flag) { NULL, "--shared" }, argv[i])
+    ) continue;
+
+    break;
+  }
+
+  if (i >= argc) {
+    return 0;
+  }
+
+  /* 2. Check for Valid Command */
+  if (strcmp(argv[i], "write") == 0 ||
+    strcmp(argv[i], "append") == 0 ||
+    strcmp(argv[i], "remove") == 0) {
+    has_command = 1;
+    i++;
+  } else {
+    return 0; /* Unknown command */
+  }
+
+  /* 3. Check for Filename */
+  for (; i < argc; i++) {
+    /* Skip subcommand-specific flags */
+    if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--force") == 0 ||
+      strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0) {
+      continue;
+    }
+
+    /* The first non-flag after the command is the filename */
+    has_filename = 1;
+    break;
+  }
+
+  return (has_command && has_filename);
 }
