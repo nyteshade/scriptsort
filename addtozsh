@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
-printf >>${HOME}/.zshrc "source <(scriptsort $HOME/.local/scripts/shared --bundle)\n"
-printf >>${HOME}/.zshrc "source <(scriptsort $HOME/.local/scripts/zsh --bundle)\n\n"
-printf >>${HOME}/.zshrc "####### - Anything beyond this point is as of yet unmanaged - ########\n"
+printf >>"${HOME}/.zshrc" "\nexport LOCAL=\${HOME}/.local\n"
+printf >>"${HOME}/.zshrc" "export PATH=\${LOCAL}/bin:\${PATH}\n\n"
+printf >>"${HOME}/.zshrc" "source <(scriptsort $HOME/.local/scripts/shared --bundle)\n"
+printf >>"${HOME}/.zshrc" "source <(scriptsort $HOME/.local/scripts/zsh --bundle)\n\n"
+printf >>"${HOME}/.zshrc" "####### - Anything beyond this point is as of yet unmanaged - ########\n"
