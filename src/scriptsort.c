@@ -86,12 +86,6 @@ int main(int argc, char *argv[]) {
   }
 
   if (is_valid_ss_args(argc, argv)) {
-    int i = 0, result = 0;
-
-    for (i = 0; i < argc; i++) {
-      printf("ARG[%d]: %s\n", i, argv[i]);
-    }
-
     return scriptsort_main(argc, argv);
   }
 
