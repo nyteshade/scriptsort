@@ -112,7 +112,7 @@ static const FlagDef LIST_FLAGS[] = {
 
 static const FlagDef BUNDLE_FLAGS[] = {
   { "-h", "--help",        NULL,        "show this help"                                      },
-  { NULL, "--scripts-dir", "<base-dir>","bundle shared/ then the detected shell sub-directory"},
+  { "-s", "--scripts-dir", "<base-dir>","bundle shared/ then the detected shell sub-directory"},
   { NULL, "--debug",       NULL,        "emit timing variables around the bundle"              },
   { NULL, "--cutoff",      "<n>",       "change the ordered file cutoff (default: 50)"         },
   { NULL, NULL, NULL, NULL }
@@ -372,6 +372,11 @@ static int bundle_append_dir(
   size_t file_size;
   char  *file_contents;
 
+  /* Include the sub-directory basename so _SCRIPTSORT_FILE reads as e.g.
+   * "shared/aliases" or "zsh/env.pyenv" rather than a bare filename. */
+  const char *sep     = find_last_path_separator(dir_path);
+  const char *dir_label = sep ? sep + 1 : dir_path;
+
   FileEntry *groups[3] = { sd->lower_files, sd->unordered_files, sd->upper_files };
   int        counts[3] = { sd->lower_count, sd->unordered_count, sd->upper_count };
 
@@ -386,9 +391,9 @@ static int bundle_append_dir(
       int    file_end   = file_start + (file_lines > 0 ? (int)file_lines - 1 : 0);
 
       header_len = (size_t)snprintf(header, sizeof(header),
-        "\n# --- %s (lines %d-%d) ---\n_SCRIPTSORT_FILE='%s'\n_SCRIPTSORT_OFFSET=%d\n",
-        groups[g][i].name, file_start, file_end,
-        groups[g][i].name, file_start);
+        "\n# --- %s/%s (lines %d-%d) ---\n_SCRIPTSORT_FILE='%s/%s'\n_SCRIPTSORT_OFFSET=%d\n",
+        dir_label, groups[g][i].name, file_start, file_end,
+        dir_label, groups[g][i].name, file_start);
       *line_offset = file_end + 1;
 
       *buffer = ensure_buffer_capacity(*buffer, capacity, *size + header_len + file_size + 2);
@@ -472,7 +477,7 @@ static int bundle_main(int argc, char **argv) {
     if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
       print_subcommand_help("scriptsort", find_subcommand("bundle"));
       return EXIT_SUCCESS;
-    } else if (strcmp(argv[i], "--scripts-dir") == 0 && i + 1 < argc) {
+    } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--scripts-dir") == 0) && i + 1 < argc) {
       scripts_dir = argv[++i];
     } else if (strcmp(argv[i], "--debug") == 0) {
       debugtext = Truth;
