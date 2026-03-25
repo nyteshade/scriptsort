@@ -111,10 +111,12 @@ static const FlagDef LIST_FLAGS[] = {
 };
 
 static const FlagDef BUNDLE_FLAGS[] = {
-  { "-h", "--help",        NULL,        "show this help"                                      },
-  { "-s", "--scripts-dir", "<base-dir>","bundle shared/ then the detected shell sub-directory"},
-  { NULL, "--debug",       NULL,        "emit timing variables around the bundle"              },
-  { NULL, "--cutoff",      "<n>",       "change the ordered file cutoff (default: 50)"         },
+  { "-h", "--help",        NULL,        "show this help"                                        },
+  { "-s", "--scripts-dir", "<base-dir>","bundle shared/ then the detected shell sub-directory"  },
+  { NULL, "--zsh",         NULL,        "override shell detection: use zsh/ (requires -s)"      },
+  { NULL, "--bash",        NULL,        "override shell detection: use bash/ (requires -s)"     },
+  { NULL, "--debug",       NULL,        "emit timing variables around the bundle"                },
+  { NULL, "--cutoff",      "<n>",       "change the ordered file cutoff (default: 50)"           },
   { NULL, NULL, NULL, NULL }
 };
 
@@ -468,10 +470,11 @@ static int list_main(int argc, char **argv) {
  * ====================================================================== */
 
 static int bundle_main(int argc, char **argv) {
-  const char  *directory    = NULL;
-  const char  *scripts_dir  = NULL;
-  Boolean      debugtext    = Falsehood;
-  unsigned int cutoff_count = 50;
+  const char  *directory        = NULL;
+  const char  *scripts_dir      = NULL;
+  const char  *shell_override   = NULL;
+  Boolean      debugtext        = Falsehood;
+  unsigned int cutoff_count     = 50;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -479,6 +482,10 @@ static int bundle_main(int argc, char **argv) {
       return EXIT_SUCCESS;
     } else if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--scripts-dir") == 0) && i + 1 < argc) {
       scripts_dir = argv[++i];
+    } else if (strcmp(argv[i], "--zsh") == 0) {
+      shell_override = SUB_ZSH;
+    } else if (strcmp(argv[i], "--bash") == 0) {
+      shell_override = SUB_BASH;
     } else if (strcmp(argv[i], "--debug") == 0) {
       debugtext = Truth;
     } else if (strcmp(argv[i], "--cutoff") == 0 && i + 1 < argc) {
@@ -500,6 +507,10 @@ static int bundle_main(int argc, char **argv) {
     fprintf(stderr, SGR_RED "--scripts-dir and <directory> are mutually exclusive\n" SGR_RESET);
     return EXIT_FAILURE;
   }
+  if (shell_override && !scripts_dir) {
+    fprintf(stderr, SGR_RED "--zsh/--bash require --scripts-dir (-s)\n" SGR_RESET);
+    return EXIT_FAILURE;
+  }
   if (!scripts_dir && !directory) {
     print_subcommand_help("scriptsort", find_subcommand("bundle"));
     return EXIT_FAILURE;
@@ -519,22 +530,19 @@ static int bundle_main(int argc, char **argv) {
 
   if (scripts_dir) {
     /*
-     * Detect the shell that invoked scriptsort.
+     * Resolve which shell-specific sub-directory to include after shared/.
      *
-     * ZSH_VERSION / BASH_VERSION are checked first — they are definitive when
-     * exported, but many shells do not export them by default.
-     *
-     * $SHELL is the fallback: it is always exported (set by the login process)
-     * and correct for the common case where login shell == current shell. It
-     * would misidentify the shell only if the user launched a different shell
-     * interactively, which is rare enough to be acceptable.
+     * An explicit --zsh or --bash flag takes priority over auto-detection.
+     * Auto-detection checks ZSH_VERSION / BASH_VERSION first (definitive when
+     * exported), then falls back to $SHELL basename (always exported, correct
+     * for the common case where login shell == current shell).
      */
-    const char *shell_subdir = NULL;
-    if (getenv("ZSH_VERSION")) {
+    const char *shell_subdir = shell_override;
+    if (!shell_subdir && getenv("ZSH_VERSION")) {
       shell_subdir = SUB_ZSH;
-    } else if (getenv("BASH_VERSION")) {
+    } else if (!shell_subdir && getenv("BASH_VERSION")) {
       shell_subdir = SUB_BASH;
-    } else {
+    } else if (!shell_subdir) {
       const char *shell = getenv("SHELL");
       if (shell) {
         const char *name = find_last_path_separator(shell);
