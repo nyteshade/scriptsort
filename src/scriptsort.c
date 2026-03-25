@@ -195,8 +195,9 @@ static int   bundle_append_dir(const char *dir_path, SortedDir *sd,
                char **buffer, size_t *capacity, size_t *size, int *line_offset);
 
 static const char *find_last_path_separator(const char *path);
-static int    extract_order_number(const char *filename);
-static int    compare_ordered_files(const void *a, const void *b);
+static int         extract_order_number(const char *filename);
+static const char *extract_suffix(const char *filename);
+static int         compare_ordered_files(const void *a, const void *b);
 static int    compare_unordered(const void *a, const void *b);
 static char  *read_file_contents(const char *directory, const char *filename, size_t *size);
 static char  *ensure_buffer_capacity(char *buffer, size_t *capacity, size_t needed);
@@ -513,15 +514,30 @@ static int bundle_main(int argc, char **argv) {
 
   if (scripts_dir) {
     /*
-     * Detect the shell that invoked scriptsort via its exported env variables.
-     * ZSH_VERSION and BASH_VERSION are set (and typically exported) by their
-     * respective shells, making them more reliable than $SHELL which reflects
-     * the login shell rather than the currently-running one.
-     * If neither is found, only shared/ is included.
+     * Detect the shell that invoked scriptsort.
+     *
+     * ZSH_VERSION / BASH_VERSION are checked first — they are definitive when
+     * exported, but many shells do not export them by default.
+     *
+     * $SHELL is the fallback: it is always exported (set by the login process)
+     * and correct for the common case where login shell == current shell. It
+     * would misidentify the shell only if the user launched a different shell
+     * interactively, which is rare enough to be acceptable.
      */
     const char *shell_subdir = NULL;
-    if      (getenv("ZSH_VERSION"))  shell_subdir = SUB_ZSH;
-    else if (getenv("BASH_VERSION")) shell_subdir = SUB_BASH;
+    if (getenv("ZSH_VERSION")) {
+      shell_subdir = SUB_ZSH;
+    } else if (getenv("BASH_VERSION")) {
+      shell_subdir = SUB_BASH;
+    } else {
+      const char *shell = getenv("SHELL");
+      if (shell) {
+        const char *name = find_last_path_separator(shell);
+        name = name ? name + 1 : shell;
+        if      (strcmp(name, "zsh")  == 0) shell_subdir = SUB_ZSH;
+        else if (strcmp(name, "bash") == 0) shell_subdir = SUB_BASH;
+      }
+    }
 
     char      path[PATH_MAX];
     struct stat st;
@@ -825,11 +841,22 @@ static int extract_order_number(const char *filename) {
   return (int)num;
 }
 
+/* Returns a pointer to the suffix of an ordered filename — the part after
+ * "ordered.<digits>." — so that same-group files sort by intended name
+ * rather than by digit formatting (e.g. "001" vs "01" vs "1").
+ * For non-ordered filenames, returns the full name unchanged. */
+static const char *extract_suffix(const char *filename) {
+  if (strncmp(filename, "ordered.", 8) != 0) return filename;
+  const char *p = filename + 8;
+  while (isdigit((unsigned char)*p)) p++;
+  return (*p == '.') ? p + 1 : p;
+}
+
 static int compare_ordered_files(const void *a, const void *b) {
   const FileEntry *fa = (const FileEntry *)a;
   const FileEntry *fb = (const FileEntry *)b;
   if (fa->order_num != fb->order_num) return fa->order_num - fb->order_num;
-  return strcmp(fa->name, fb->name);
+  return strcmp(extract_suffix(fa->name), extract_suffix(fb->name));
 }
 
 static int compare_unordered(const void *a, const void *b) {
