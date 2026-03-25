@@ -26,7 +26,7 @@
  * Constants
  * ---------------------------------------------------------------------- */
 
-#define SCRIPTSORT_VERSION   "1.0.0"
+#define SCRIPTSORT_VERSION   "2.1.0"
 
 #define MAX_FILES            1000
 #define MAX_FILENAME         256
