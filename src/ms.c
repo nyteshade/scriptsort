@@ -17,7 +17,7 @@ int main() {
   timeinfo = localtime(&now);
 
   strftime(buffer, sizeof(buffer), "%s", timeinfo);
-  printf("%s000", buffer);
+  printf("%s000\n", buffer);
 
   return 0;
 }
