@@ -67,6 +67,7 @@ static int compare_unordered(const void *a, const void *b);
 static int wal_stricmp(const char *a, const char *b);
 static char* read_file_contents(const char* directory, const char* filename, size_t* size);
 static char* ensure_buffer_capacity(char* buffer, size_t* current_capacity, size_t needed_size);
+static size_t count_lines(const char *content, size_t size);
 
 /* Function Prototypes */
 void sse_print_usage(const char *progname);
@@ -181,6 +182,12 @@ int main(int argc, char *argv[]) {
     size_t current_size = 0;
     size_t file_size;
     char* file_contents;
+    char header[MAX_FILENAME * 2 + 128];
+    size_t header_len;
+    size_t file_lines;
+    // Preamble emits 5 lines (4 code + 1 blank); debug start_time adds 1 more
+    int line_offset = (debugtext ? 1 : 0) + 5;
+    int file_start, file_end;
 
     buffer = malloc(buffer_capacity);
     if (!buffer) {
@@ -194,13 +201,22 @@ int main(int argc, char *argv[]) {
       file_contents = read_file_contents(argv[1], lower_files[i].name, &file_size);
       if (!file_contents) continue;
 
-      // Ensure buffer has enough space for contents + newline + null
-      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + file_size + 2);
+      file_lines = count_lines(file_contents, file_size);
+      file_start = line_offset + 5;  // 1 blank + comment + _FILE + _OFFSET = 4 header lines
+      file_end = file_start + (file_lines > 0 ? (int)file_lines - 1 : 0);
+      header_len = (size_t)snprintf(header, sizeof(header),
+        "\n# --- %s (lines %d-%d) ---\n_SCRIPTSORT_FILE='%s'\n_SCRIPTSORT_OFFSET=%d\n",
+        lower_files[i].name, file_start, file_end, lower_files[i].name, file_start);
+      line_offset = file_end + 1;
+
+      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + header_len + file_size + 2);
       if (!buffer) {
         free(file_contents);
         return EXIT_FAILURE;
       }
 
+      strcat(buffer + current_size, header);
+      current_size += header_len;
       strcat(buffer + current_size, file_contents);
       current_size += file_size;
       buffer[current_size++] = '\n';
@@ -212,12 +228,22 @@ int main(int argc, char *argv[]) {
       file_contents = read_file_contents(argv[1], unordered_files[i].name, &file_size);
       if (!file_contents) continue;
 
-      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + file_size + 2);
+      file_lines = count_lines(file_contents, file_size);
+      file_start = line_offset + 5;
+      file_end = file_start + (file_lines > 0 ? (int)file_lines - 1 : 0);
+      header_len = (size_t)snprintf(header, sizeof(header),
+        "\n# --- %s (lines %d-%d) ---\n_SCRIPTSORT_FILE='%s'\n_SCRIPTSORT_OFFSET=%d\n",
+        unordered_files[i].name, file_start, file_end, unordered_files[i].name, file_start);
+      line_offset = file_end + 1;
+
+      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + header_len + file_size + 2);
       if (!buffer) {
         free(file_contents);
         return EXIT_FAILURE;
       }
 
+      strcat(buffer + current_size, header);
+      current_size += header_len;
       strcat(buffer + current_size, file_contents);
       current_size += file_size;
       buffer[current_size++] = '\n';
@@ -229,12 +255,22 @@ int main(int argc, char *argv[]) {
       file_contents = read_file_contents(argv[1], upper_files[i].name, &file_size);
       if (!file_contents) continue;
 
-      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + file_size + 2);
+      file_lines = count_lines(file_contents, file_size);
+      file_start = line_offset + 5;
+      file_end = file_start + (file_lines > 0 ? (int)file_lines - 1 : 0);
+      header_len = (size_t)snprintf(header, sizeof(header),
+        "\n# --- %s (lines %d-%d) ---\n_SCRIPTSORT_FILE='%s'\n_SCRIPTSORT_OFFSET=%d\n",
+        upper_files[i].name, file_start, file_end, upper_files[i].name, file_start);
+      line_offset = file_end + 1;
+
+      buffer = ensure_buffer_capacity(buffer, &buffer_capacity, current_size + header_len + file_size + 2);
       if (!buffer) {
         free(file_contents);
         return EXIT_FAILURE;
       }
 
+      strcat(buffer + current_size, header);
+      current_size += header_len;
       strcat(buffer + current_size, file_contents);
       current_size += file_size;
       buffer[current_size++] = '\n';
@@ -249,7 +285,22 @@ int main(int argc, char *argv[]) {
       );
     }
 
+    printf(
+      "_SCRIPTSORT_OLD_TRAP=$(trap -p ERR)\n"
+      "_SCRIPTSORT_FILE=''\n"
+      "_SCRIPTSORT_OFFSET=0\n"
+      "trap 'printf \"scriptsort: error sourcing \\\"${_SCRIPTSORT_FILE}\\\" "
+        "(bundle line ${_SCRIPTSORT_OFFSET})\\n\" >&2' ERR\n"
+      "\n"
+    );
+
     printf("%s\n", buffer);
+
+    printf(
+      "\ntrap - ERR\n"
+      "eval \"$_SCRIPTSORT_OLD_TRAP\"\n"
+      "unset _SCRIPTSORT_OLD_TRAP _SCRIPTSORT_FILE _SCRIPTSORT_OFFSET\n"
+    );
 
     if (debugtext) {
       printf(
@@ -536,6 +587,16 @@ static char* ensure_buffer_capacity(char* buffer, size_t* current_capacity, size
     *current_capacity = new_capacity;
   }
   return buffer;
+}
+
+static size_t count_lines(const char *content, size_t size) {
+  size_t count = 0;
+  for (size_t i = 0; i < size; i++) {
+    if (content[i] == '\n') count++;
+  }
+  // If content doesn't end with a newline, the partial last line still counts
+  if (size > 0 && content[size - 1] != '\n') count++;
+  return count;
 }
 
 /* ------------------------------------------------------------------------ */
